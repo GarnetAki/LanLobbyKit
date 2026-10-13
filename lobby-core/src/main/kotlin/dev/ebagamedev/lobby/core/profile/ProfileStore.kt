@@ -36,7 +36,12 @@ class ProfileStore(
     }
 
     fun loadAvatarPng(): ByteArray? =
-        if (avatarFile.exists()) avatarFile.readBytes() else null
+        if (avatarFile.exists()) {
+            avatarFile.readBytes()
+        } else {
+            // дефолтный аватар, встроенный в lobby-core
+            javaClass.classLoader.getResourceAsStream("default-avatar.png")?.readBytes()
+        }
 
     /** Ресайз до 128x128 PNG; бросает IllegalArgumentException, если результат > 64 КБ. */
     fun saveAvatarPng(source: ByteArray) {

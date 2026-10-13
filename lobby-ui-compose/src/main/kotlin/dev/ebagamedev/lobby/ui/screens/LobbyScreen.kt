@@ -117,7 +117,7 @@ private fun PlayerRow(player: PlayerInfo, isHost: Boolean, canKick: Boolean, onK
     ) {
         AvatarImage(player.avatarPngBase64, 40.dp)
         Spacer(Modifier.width(12.dp))
-        Box(Modifier.size(16.dp).background(player.color?.let { Color(it.toULong()) } ?: Color.Gray, CircleShape))
+        Box(Modifier.size(16.dp).background(player.color?.let { PlayerColors.colorOf(it) } ?: Color.Gray, CircleShape))
         Spacer(Modifier.width(12.dp))
         Text(player.nick, style = MaterialTheme.typography.bodyLarge)
         if (isHost) {
@@ -149,7 +149,7 @@ private fun ColorPalette(state: LobbyState, myId: String?, onPick: (Long) -> Uni
                 modifier = Modifier.size(36.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             ) {
-                Box(Modifier.size(20.dp).background(Color(color.toULong()), CircleShape))
+                Box(Modifier.size(20.dp).background(PlayerColors.colorOf(color), CircleShape))
             }
         }
     }

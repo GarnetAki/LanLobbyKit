@@ -83,6 +83,8 @@ class LobbyClientTest {
 
         host.setReady(true)
         a.setReady(true)
+        // ждём, пока сервер обработает оба SetReady, иначе StartGame может прийти раньше (другой сокет)
+        withTimeout(5000) { host.lobbyState.first { s -> s != null && s.players.count { it.ready } == 2 } }
         host.startGame()
         awaitConnectionState(host, ConnectionState.InGame)
         awaitConnectionState(a, ConnectionState.InGame)
@@ -150,6 +152,8 @@ class LobbyClientTest {
         val a = connectClient(port, "prof-a", "Alice")
         host.setReady(true)
         a.setReady(true)
+        // ждём, пока сервер обработает оба SetReady, иначе StartGame может прийти раньше (другой сокет)
+        withTimeout(5000) { host.lobbyState.first { s -> s != null && s.players.count { it.ready } == 2 } }
         host.startGame()
         awaitConnectionState(host, ConnectionState.InGame)
         awaitConnectionState(a, ConnectionState.InGame)

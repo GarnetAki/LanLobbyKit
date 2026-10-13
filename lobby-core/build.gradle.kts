@@ -35,6 +35,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 tasks.test {
     useJUnitPlatform()
+    // подробные логи клиента/сервера в тестах — для расследования флейков
+    systemProperty("org.slf4j.simpleLogger.log.dev.ebagamedev.lobby", "debug")
 }
 
 publishing {

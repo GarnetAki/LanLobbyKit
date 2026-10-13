@@ -73,8 +73,22 @@ class ProfileStoreTest {
     }
 
     @Test
-    fun `avatarBase64 is null without avatar`(@TempDir dir: Path) {
-        assertNull(ProfileStore("test", dir).avatarBase64())
+    fun `avatarBase64 falls back to bundled default`(@TempDir dir: Path) {
+        val store = ProfileStore("test", dir)
+        val b64 = store.avatarBase64()
+        assertNotNull(b64)
+        assertEquals(store.loadAvatarPng()!!.toList(), java.util.Base64.getDecoder().decode(b64).toList())
+    }
+
+    @Test
+    fun `default avatar bundled when none saved`(@TempDir dir: Path) {
+        val store = ProfileStore("test", dir)
+        val av = store.loadAvatarPng()
+        assertNotNull(av)
+        val img = ImageIO.read(av.inputStream())
+        assertEquals(128, img.width)
+        assertEquals(128, img.height)
+        assertNotNull(store.avatarBase64())
     }
 
     @Test
