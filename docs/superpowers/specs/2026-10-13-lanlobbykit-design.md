@@ -157,8 +157,10 @@ launcher, который найдёт все игры на classpath без об
 
 ## Публикация и использование в играх
 
+- По готовности итерации — новый **публичный репозиторий на GitHub**
+  (история из локального git переносится как есть).
 - `gradlew publishToMavenLocal` → игры: `implementation("dev.ebagamedev:lobby-core:0.1.0")`,
-  при желании `lobby-ui-compose`.
+  при желании `lobby-ui-compose`. Позже — GitHub Packages / Maven Central.
 - В активной разработке игры подключают `includeBuild("../LanLobbyKit")`.
 - Игра вызывает одну точку входа: `LanLobby.run(game: LobbyGameUi)` —
   показывает Compose-лобби и по старту дергает `game.onGameStarted`.
