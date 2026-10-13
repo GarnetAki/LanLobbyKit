@@ -94,6 +94,12 @@ class LobbyServer(
         logger.info("LobbyServer stopped")
     }
 
+    /** Закрывает сокет игрока, сохраняя слот (имитация обрыва сети; для тестов и отладки). */
+    suspend fun forceDisconnect(playerId: String) {
+        val session = mutex.withLock { slots[playerId]?.session }
+        session?.close()
+    }
+
     private fun Application.module() {
         install(WebSockets)
         routing {
@@ -174,6 +180,8 @@ class LobbyServer(
                     broadcastSessionEvent(slot, PlayerSessionEvent.RECONNECTED)
                     broadcastState()
                     if (phase == Phase.Game) {
+                        // клиенту нужно знать, что он вернулся в игру, а не в лобби
+                        sendTo(slot, ServerMsg.GameStarted(mutex.withLock { settings }))
                         hooks.onPlayerRejoin(slot.playerId) { payload ->
                             sendTo(slot, ServerMsg.GameMsg(fromPlayerId = "server", payload = payload))
                         }
