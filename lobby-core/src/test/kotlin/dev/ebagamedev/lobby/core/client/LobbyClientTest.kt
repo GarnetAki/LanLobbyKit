@@ -9,9 +9,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,6 +66,22 @@ class LobbyClientTest {
     private suspend fun LobbyClient.playerId(): String =
         withTimeout(5000) { myPlayerId.first { it != null }!! }
 
+    /** События — горячий SharedFlow без replay: подписываемся заранее, чтобы не пропустить эмиссию. */
+    private fun recordEvents(c: LobbyClient): MutableList<LobbyEvent> {
+        val seen = mutableListOf<LobbyEvent>()
+        scope.launch { c.events.collect { synchronized(seen) { seen += it } } }
+        return seen
+    }
+
+    private suspend fun awaitEvent(seen: List<LobbyEvent>, timeoutMs: Long = 5000, pred: (LobbyEvent) -> Boolean) {
+        withTimeout(timeoutMs) {
+            while (true) {
+                if (synchronized(seen) { seen.any(pred) }) return@withTimeout
+                kotlinx.coroutines.delay(20)
+            }
+        }
+    }
+
     @Test
     fun `connect reaches InLobby and receives lobby state`() = runBlocking {
         val port = newServer()
@@ -102,13 +122,14 @@ class LobbyClientTest {
         val port = newServer()
         val host = connectClient(port, "prof-host", "Host")
         val a = connectClient(port, "prof-a", "Alice")
+        val aEvents = recordEvents(a)
         a.setColor(0xFFFF5722)
         withTimeout(5000) { host.lobbyState.first { s -> s?.players?.first { it.nick == "Alice" }?.color == 0xFFFF5722L } }
 
         server!!.forceDisconnect(a.playerId())
 
         // StateFlow конфлатирует — Connecting можно пропустить; реконнект доказывает событие Reconnected
-        withTimeout(5000) { a.events.first { it == LobbyEvent.Reconnected } }
+        awaitEvent(aEvents) { it == LobbyEvent.Reconnected }
         awaitConnectionState(a, ConnectionState.InLobby)
         // цвет сохранился на сервере
         withTimeout(5000) {
@@ -124,9 +145,10 @@ class LobbyClientTest {
         val port = newServer()
         val host = connectClient(port, "prof-host", "Host")
         val a = connectClient(port, "prof-a", "Alice")
+        val aEvents = recordEvents(a)
 
         host.kick(a.playerId())
-        withTimeout(5000) { a.events.first { it is LobbyEvent.Kicked } }
+        awaitEvent(aEvents) { it is LobbyEvent.Kicked }
         awaitConnectionState(a, ConnectionState.Disconnected)
         delay(500)
         assertEquals(ConnectionState.Disconnected, a.connectionState.value)
@@ -138,10 +160,66 @@ class LobbyClientTest {
         val port = newServer()
         val host = connectClient(port, "prof-host", "Host")
         val a = connectClient(port, "prof-a", "Alice")
+        val aEvents = recordEvents(a)
 
         host.disconnect()
-        withTimeout(5000) { a.events.first { it is LobbyEvent.HostDisconnectedEvent } }
+        awaitEvent(aEvents) { it is LobbyEvent.HostDisconnectedEvent }
         awaitConnectionState(a, ConnectionState.Disconnected)
+        Unit
+    }
+
+    @Test
+    fun `reconnect to another server joins fresh`() = runBlocking {
+        val port1 = newServer()
+        val c = connectClient(port1, "prof-x", "X")
+        c.disconnect()
+        awaitConnectionState(c, ConnectionState.Disconnected)
+        server?.stop()
+        server = null
+
+        val port2 = newServer()
+        c.connect("127.0.0.1", port2, profile("prof-x", "X"))
+        awaitConnectionState(c, ConnectionState.InLobby)
+        assertNotNull(c.myPlayerId.value)
+        Unit
+    }
+
+    @Test
+    fun `terminal join rejection stops reconnecting`() = runBlocking {
+        val port = newServer()
+        connectClient(port, "prof-1", "Bob")
+        val c2 = newClient()
+        val c2Events = recordEvents(c2)
+        c2.connect("127.0.0.1", port, profile("prof-2", "bob"))
+        awaitEvent(c2Events) { it is LobbyEvent.ErrorReceived && it.reason == "nick taken" }
+        awaitConnectionState(c2, ConnectionState.Disconnected)
+        delay(500)
+        assertEquals(ConnectionState.Disconnected, c2.connectionState.value)
+        Unit
+    }
+
+    @Test
+    fun `game messages arrive in send order`() = runBlocking {
+        val port = newServer()
+        val host = connectClient(port, "prof-host", "Host")
+        val a = connectClient(port, "prof-a", "Alice")
+        host.setReady(true)
+        a.setReady(true)
+        withTimeout(5000) { host.lobbyState.first { s -> s != null && s.players.count { it.ready } == 2 } }
+        host.startGame()
+        awaitConnectionState(host, ConnectionState.InGame)
+        awaitConnectionState(a, ConnectionState.InGame)
+
+        // подписка ДО отправки: SharedFlow без replay не хранит сообщения для будущих подписчиков
+        val received = mutableListOf<Int>()
+        scope.launch {
+            host.incomingGame.collect { msg -> synchronized(received) { received += msg.payload.jsonPrimitive.int } }
+        }
+        repeat(50) { i -> a.sendGame(JsonPrimitive(i)) }
+        withTimeout(5000) {
+            while (synchronized(received) { received.size } < 50) delay(20)
+        }
+        assertEquals((0 until 50).toList(), synchronized(received) { received.toList() })
         Unit
     }
 
@@ -150,6 +228,7 @@ class LobbyClientTest {
         val port = newServer()
         val host = connectClient(port, "prof-host", "Host")
         val a = connectClient(port, "prof-a", "Alice")
+        val aEvents = recordEvents(a)
         host.setReady(true)
         a.setReady(true)
         // ждём, пока сервер обработает оба SetReady, иначе StartGame может прийти раньше (другой сокет)
@@ -159,12 +238,16 @@ class LobbyClientTest {
         awaitConnectionState(a, ConnectionState.InGame)
 
         server!!.forceDisconnect(a.playerId())
-        withTimeout(5000) { a.events.first { it == LobbyEvent.Reconnected } }
+        awaitEvent(aEvents) { it == LobbyEvent.Reconnected }
         awaitConnectionState(a, ConnectionState.InGame)
 
         a.sendGame(JsonPrimitive("after-reconnect"))
         val gm = withTimeout(5000) { host.incomingGame.first() }
         assertEquals(JsonPrimitive("after-reconnect"), gm.payload)
+
+        // реконнект в игре — это восстановление, а не новый старт
+        awaitEvent(aEvents) { it is LobbyEvent.Reconnected }
+        assertEquals(1, synchronized(aEvents) { aEvents.count { it is LobbyEvent.GameStartedEvent } })
         Unit
     }
 }

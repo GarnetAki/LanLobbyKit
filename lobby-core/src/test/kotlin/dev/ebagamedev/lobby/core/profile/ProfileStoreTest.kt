@@ -7,6 +7,7 @@ import java.nio.file.Path
 import java.util.Random
 import javax.imageio.ImageIO
 import kotlin.io.path.exists
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -78,6 +79,16 @@ class ProfileStoreTest {
         val b64 = store.avatarBase64()
         assertNotNull(b64)
         assertEquals(store.loadAvatarPng()!!.toList(), java.util.Base64.getDecoder().decode(b64).toList())
+    }
+
+    @Test
+    fun `corrupt profile json regenerates with backup`(@TempDir dir: Path) {
+        val store = ProfileStore("test", dir)
+        store.loadOrCreate()
+        dir.resolve("profile.json").writeText("{corrupt!!!")
+        val fresh = ProfileStore("test", dir).loadOrCreate()
+        assertTrue(fresh.profileId.isNotBlank())
+        assertTrue(dir.resolve("profile.json.bak").exists())
     }
 
     @Test

@@ -11,7 +11,9 @@ interface LobbyGame {
     val appId: String                  // для ~/.<appId>/ профиля
     fun scenarios(): List<Scenario>    // миссии/сэйвы/уровни
 
-    /** Вызывается при GameStarted: игра забирает LobbyClient и открывает своё окно. */
+    /** Вызывается при GameStarted: игра забирает LobbyClient и открывает своё окно.
+     *  Метод блокирующий: когда он возвращается (окно игры закрыто), LanLobby освобождает
+     *  лобби-ресурсы (сервер хоста останавливается, клиент закрывается). */
     fun onGameStarted(client: LobbyClient, settings: JsonElement?)
 
     /** Хост: игрок playerId вернулся в игру после обрыва — отправить ему снапшот

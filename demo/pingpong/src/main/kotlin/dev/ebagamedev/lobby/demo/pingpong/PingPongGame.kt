@@ -43,8 +43,8 @@ class PingPongGame : LobbyGameUi {
     private var currentCount = 0
 
     override fun scenarios(): List<Scenario> = listOf(
-        Scenario("classic", "Классика"),
-        Scenario("fast", "Быстрая"),
+        Scenario("save-1", "Сейв 1"),
+        Scenario("save-2", "Сейв 2"),
     )
 
     @Composable

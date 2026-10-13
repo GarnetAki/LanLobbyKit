@@ -59,14 +59,20 @@ class LobbyController(val game: LobbyGameUi) {
         return connect("127.0.0.1", srv.actualPort)
     }
 
+    /** Подключается к хосту; бросает IllegalStateException, если за 10 c не дошло до лобби. */
     suspend fun join(host: String, port: Int): LobbyClient {
         leave()
         val c = connect(host, port)
-        scope.launch {
-            c.connectionState.first { it == ConnectionState.InLobby }
-            profile = profile.copy(lastHost = host, lastPort = port)
-            profileStore.save(profile)
+        val reached = kotlinx.coroutines.withTimeoutOrNull(10_000) {
+            c.connectionState.first { it == ConnectionState.InLobby || it == ConnectionState.Disconnected }
         }
+        if (reached != ConnectionState.InLobby) {
+            c.shutdown()
+            client = null
+            throw IllegalStateException("Не удалось подключиться к $host:$port")
+        }
+        profile = profile.copy(lastHost = host, lastPort = port)
+        profileStore.save(profile)
         return c
     }
 
@@ -78,7 +84,8 @@ class LobbyController(val game: LobbyGameUi) {
     }
 
     suspend fun leave() {
-        client?.disconnect()
+        // клиенты не переиспользуем между лобби — гасим движок полностью
+        client?.shutdown()
         client = null
         server?.stop()
         server = null

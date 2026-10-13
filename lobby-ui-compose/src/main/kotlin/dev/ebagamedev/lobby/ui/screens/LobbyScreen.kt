@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,19 +15,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,8 +43,9 @@ import dev.ebagamedev.lobby.core.protocol.PlayerInfo
 import dev.ebagamedev.lobby.ui.LobbyGameUi
 import dev.ebagamedev.lobby.ui.PlayerColors
 
+/** Горизонтальный лейаут (как в SRooms): слева игроки + палитра, справа вкладки Настройки/Сейвы. */
 @Composable
-fun LobbyScreen(game: LobbyGameUi, client: LobbyClient, hostedPort: Int?) {
+fun LobbyScreen(game: LobbyGameUi, client: LobbyClient, hostedPort: Int?, onLeave: () -> Unit) {
     val lobby by client.lobbyState.collectAsState()
     val myId by client.myPlayerId.collectAsState()
     val isHost by client.isHost.collectAsState()
@@ -60,7 +63,9 @@ fun LobbyScreen(game: LobbyGameUi, client: LobbyClient, hostedPort: Int?) {
             Spacer(Modifier.weight(1f))
             if (isHost && hostedPort != null) {
                 Text("Порт: $hostedPort", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.width(16.dp))
             }
+            OutlinedButton(onClick = onLeave) { Text("Выйти") }
         }
         Spacer(Modifier.height(16.dp))
 
@@ -70,41 +75,99 @@ fun LobbyScreen(game: LobbyGameUi, client: LobbyClient, hostedPort: Int?) {
             return@Column
         }
 
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-            items(state.players) { player ->
-                PlayerRow(
-                    player = player,
-                    isHost = player.playerId == state.hostId,
-                    canKick = isHost && player.playerId != myId,
-                    onKick = { client.kick(player.playerId) },
-                )
-                HorizontalDivider()
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            // левая колонка: игроки + палитра
+            Column(Modifier.weight(1f)) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    items(state.players) { player ->
+                        PlayerRow(
+                            player = player,
+                            isHost = player.playerId == state.hostId,
+                            canKick = isHost && player.playerId != myId,
+                            onKick = { client.kick(player.playerId) },
+                        )
+                        HorizontalDivider()
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Цвет", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                ColorPalette(state, myId) { client.setColor(it) }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val me = state.players.firstOrNull { it.playerId == myId }
+                    Button(onClick = { client.setReady(!(me?.ready ?: false)) }) {
+                        Text(if (me?.ready == true) "Не готов" else "Готов")
+                    }
+                    if (isHost) {
+                        Spacer(Modifier.width(16.dp))
+                        val allReady = state.players.filter { it.connected }.all { it.ready }
+                        Button(enabled = allReady, onClick = { client.startGame() }) { Text("Старт") }
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(24.dp))
+
+            // правая колонка: вкладки Настройки / Сейвы (сейвы — только хосту)
+            Column(Modifier.width(320.dp)) {
+                val tabs = if (isHost) listOf("Настройки", "Сейвы") else listOf("Настройки")
+                var selectedTab by remember { mutableIntStateOf(0) }
+                if (selectedTab >= tabs.size) selectedTab = 0
+                TabRow(selectedTabIndex = selectedTab) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                when (tabs[selectedTab]) {
+                    "Сейвы" -> SavesPanel(state, client)
+                    else -> SettingsPanel(game, state, isHost, client)
+                }
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(12.dp))
-        Text("Цвет", style = MaterialTheme.typography.titleMedium)
+@Composable
+private fun SettingsPanel(game: LobbyGameUi, state: LobbyState, isHost: Boolean, client: LobbyClient) {
+    if (!isHost) {
+        Text("Настройки меняет хост", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
-        ColorPalette(state, myId) { client.setColor(it) }
-        Spacer(Modifier.height(12.dp))
+    }
+    // не-хосту — read-only: onChange глушим
+    game.SettingsContent(state.settings) { if (isHost) client.updateSettings(it) }
+}
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val me = state.players.firstOrNull { it.playerId == myId }
-            Button(onClick = { client.setReady(!(me?.ready ?: false)) }) {
-                Text(if (me?.ready == true) "Не готов" else "Готов")
+@Composable
+private fun SavesPanel(state: LobbyState, client: LobbyClient) {
+    if (state.scenarios.isEmpty()) {
+        Text("Сейвов нет", style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    LazyColumn {
+        items(state.scenarios) { scenario ->
+            val selected = scenario.id == state.selectedScenarioId
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .selectable(selected = selected, onClick = { client.selectScenario(scenario.id) })
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    )
+                    .padding(12.dp),
+            ) {
+                Column {
+                    Text(scenario.title, style = MaterialTheme.typography.bodyLarge)
+                    scenario.description?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
-            Spacer(Modifier.width(16.dp))
-            if (isHost) {
-                ScenarioPicker(state, client)
-                Spacer(Modifier.width(16.dp))
-                val allReady = state.players.filter { it.connected }.all { it.ready }
-                Button(enabled = allReady, onClick = { client.startGame() }) { Text("Старт") }
-            }
-        }
-
-        if (isHost) {
-            Spacer(Modifier.height(16.dp))
-            game.SettingsContent(state.settings) { client.updateSettings(it) }
         }
     }
 }
@@ -147,31 +210,9 @@ private fun ColorPalette(state: LobbyState, myId: String?, onPick: (Long) -> Uni
                 enabled = !isTaken,
                 onClick = { onPick(color) },
                 modifier = Modifier.size(36.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                contentPadding = PaddingValues(0.dp),
             ) {
                 Box(Modifier.size(20.dp).background(PlayerColors.colorOf(color), CircleShape))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScenarioPicker(state: LobbyState, client: LobbyClient) {
-    var expanded by remember { mutableStateOf(false) }
-    val selected = state.scenarios.firstOrNull { it.id == state.selectedScenarioId }
-    Box {
-        OutlinedButton(onClick = { expanded = true }) {
-            Text(selected?.title ?: "Сценарий…")
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            state.scenarios.forEach { scenario ->
-                DropdownMenuItem(
-                    text = { Text(scenario.title) },
-                    onClick = {
-                        client.selectScenario(scenario.id)
-                        expanded = false
-                    },
-                )
             }
         }
     }

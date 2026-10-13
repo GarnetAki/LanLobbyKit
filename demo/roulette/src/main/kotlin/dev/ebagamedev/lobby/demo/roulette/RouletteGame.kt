@@ -36,7 +36,7 @@ class RouletteGame : LobbyGameUi {
     override val gameName = "Roulette"
     override val appId = "lanlobbykit-demo-roulette"
 
-    override fun scenarios(): List<Scenario> = listOf(Scenario("default", "Обычная"))
+    override fun scenarios(): List<Scenario> = listOf(Scenario("default", "Новая игра"))
 
     @Composable
     override fun SettingsContent(settings: JsonElement?, onChange: (JsonElement) -> Unit) {

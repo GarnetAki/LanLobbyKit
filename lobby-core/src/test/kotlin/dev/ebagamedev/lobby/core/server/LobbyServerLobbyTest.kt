@@ -98,9 +98,11 @@ class LobbyServerLobbyTest {
         aClient.send(ClientMsg.SetColor(1))
         val err = aClient.await<ServerMsg.Error>()
         assertEquals("color taken", err.reason)
-        // триггерим новый broadcast и проверяем, что цвет A не применился
+        // триггерим новый broadcast и проверяем, что цвет A не изменился (остался авто-назначенный)
         b.send(ClientMsg.SetReady(true))
-        aClient.awaitState { s -> s.players.size == 2 && s.players.first { it.nick == "A" }.color == null }
+        aClient.awaitState { s ->
+            s.players.size == 2 && s.players.first { it.nick == "A" }.color == dev.ebagamedev.lobby.core.DefaultPlayerColors.palette[0]
+        }
         Unit
     }
 
@@ -127,6 +129,21 @@ class LobbyServerLobbyTest {
         assertEquals("kicked", a.await<ServerMsg.Error>().reason)
         withTimeout(5000) { a.closed.await() }
         host.awaitState { s -> s.players.none { it.nick == "Alice" } }
+        Unit
+    }
+
+    @Test
+    fun `join auto-assigns first free colors`() = runBlocking {
+        val port = newServer()
+        join(port, "prof-1", "A")
+        join(port, "prof-2", "B")
+        val b = clients[1]
+        val st = b.awaitState { it.players.size == 2 }
+        assertEquals(dev.ebagamedev.lobby.core.DefaultPlayerColors.palette[0], st.players[0].color)
+        assertEquals(dev.ebagamedev.lobby.core.DefaultPlayerColors.palette[1], st.players[1].color)
+        // ручная смена на свободный цвет работает
+        b.send(ClientMsg.SetColor(dev.ebagamedev.lobby.core.DefaultPlayerColors.palette[5]))
+        b.awaitState { s -> s.players[1].color == dev.ebagamedev.lobby.core.DefaultPlayerColors.palette[5] }
         Unit
     }
 

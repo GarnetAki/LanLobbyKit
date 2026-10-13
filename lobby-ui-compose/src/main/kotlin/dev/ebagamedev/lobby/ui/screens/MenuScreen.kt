@@ -89,9 +89,14 @@ fun MenuScreen(controller: LobbyController, onConnected: () -> Unit, onError: (S
                     onClick = {
                         busy = true
                         scope.launch {
-                            controller.join(joinHost.trim(), joinPort.toInt())
-                            busy = false
-                            onConnected()
+                            try {
+                                controller.join(joinHost.trim(), joinPort.toInt())
+                                onConnected()
+                            } catch (e: Exception) {
+                                onError(e.message ?: "Ошибка подключения")
+                            } finally {
+                                busy = false
+                            }
                         }
                     },
                 ) { Text("Подключиться") }

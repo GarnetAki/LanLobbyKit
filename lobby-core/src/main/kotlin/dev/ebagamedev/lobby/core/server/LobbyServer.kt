@@ -37,6 +37,7 @@ class LobbyServer(
     private val scenarios: List<Scenario>,
     private val requestedPort: Int,
     private val hooks: GameSessionHooks = GameSessionHooks.None,
+    private val palette: List<Long> = dev.ebagamedev.lobby.core.DefaultPlayerColors.palette,
 ) {
 
     private enum class Phase { Lobby, Game }
@@ -152,6 +153,8 @@ class LobbyServer(
                     if (phase != Phase.Lobby) "game in progress"
                     else if (slots.values.any { it.nick.equals(msg.nick, ignoreCase = true) }) "nick taken"
                     else {
+                        // первый свободный цвет из палитры по умолчанию
+                        slot.color = palette.firstOrNull { c -> slots.values.none { it.color == c } }
                         slots[slot.playerId] = slot
                         if (hostId == null) hostId = slot.playerId
                         null
@@ -177,11 +180,13 @@ class LobbyServer(
                         slot.session = this
                     }
                     sendTo(slot, ServerMsg.Welcome(slot.playerId, isHost = slot.playerId == hostId))
+                    // GameStarted до broadcastState: клиент по первому пост-Welcome сообщению понимает фазу
+                    if (phase == Phase.Game) {
+                        sendTo(slot, ServerMsg.GameStarted(mutex.withLock { settings }))
+                    }
                     broadcastSessionEvent(slot, PlayerSessionEvent.RECONNECTED)
                     broadcastState()
                     if (phase == Phase.Game) {
-                        // клиенту нужно знать, что он вернулся в игру, а не в лобби
-                        sendTo(slot, ServerMsg.GameStarted(mutex.withLock { settings }))
                         hooks.onPlayerRejoin(slot.playerId) { payload ->
                             sendTo(slot, ServerMsg.GameMsg(fromPlayerId = "server", payload = payload))
                         }
@@ -208,6 +213,7 @@ class LobbyServer(
         }
         when (msg) {
             is ClientMsg.SetColor -> {
+                logger.debug("recv {} from {}", msg::class.simpleName, slot.nick)
                 val error = mutex.withLock {
                     if (phase != Phase.Lobby) "not in lobby"
                     else if (slots.values.any { it.playerId != slot.playerId && it.color == msg.color }) "color taken"

@@ -82,7 +82,15 @@ object LanLobby {
                             }
                             Screen.Lobby -> Box_(modifier) {
                                 val c = controller.client
-                                if (c != null) LobbyScreen(game, c, controller.hostedPort)
+                                if (c != null) LobbyScreen(
+                                    game, c, controller.hostedPort,
+                                    onLeave = {
+                                        uiScope.launch {
+                                            controller.leave()
+                                            screen = Screen.Menu
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
@@ -93,9 +101,9 @@ object LanLobby {
         val started = startedWith
         if (started != null) {
             game.onGameStarted(started.first, started.second)
-        } else {
-            runBlocking { controller.shutdown() }
         }
+        // окно игры закрылось (или лобби закрыли без старта) — освобождаем сервер и клиента
+        runBlocking { controller.shutdown() }
     }
 }
 

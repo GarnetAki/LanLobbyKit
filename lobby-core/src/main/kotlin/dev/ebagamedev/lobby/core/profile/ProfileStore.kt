@@ -9,6 +9,7 @@ import java.util.Base64
 import java.util.UUID
 import javax.imageio.ImageIO
 import kotlin.io.path.exists
+import kotlin.io.path.moveTo
 import kotlin.io.path.readBytes
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
@@ -23,7 +24,14 @@ class ProfileStore(
 
     fun loadOrCreate(): PlayerProfile {
         if (profileFile.exists()) {
-            return LobbyJson.decodeFromString(PlayerProfile.serializer(), profileFile.toFile().readText())
+            try {
+                return LobbyJson.decodeFromString(PlayerProfile.serializer(), profileFile.toFile().readText())
+            } catch (e: Exception) {
+                // битый profile.json (убили процесс посреди записи) — откладываем в .bak и создаём свежий
+                runCatching {
+                    profileFile.moveTo(dir.resolve("profile.json.bak"), overwrite = true)
+                }
+            }
         }
         val profile = PlayerProfile(profileId = UUID.randomUUID().toString(), nick = "Player")
         save(profile)
@@ -32,7 +40,9 @@ class ProfileStore(
 
     fun save(profile: PlayerProfile) {
         dir.toFile().mkdirs()
-        profileFile.writeText(LobbyJson.encodeToString(PlayerProfile.serializer(), profile))
+        val tmp = dir.resolve("profile.json.tmp")
+        tmp.writeText(LobbyJson.encodeToString(PlayerProfile.serializer(), profile))
+        tmp.moveTo(profileFile, overwrite = true)
     }
 
     fun loadAvatarPng(): ByteArray? =
