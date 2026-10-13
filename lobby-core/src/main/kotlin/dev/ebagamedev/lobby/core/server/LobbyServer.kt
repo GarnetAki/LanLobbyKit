@@ -21,6 +21,12 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
@@ -54,6 +60,7 @@ class LobbyServer(
     private var selectedScenarioId: String? = null
     private var settings: JsonElement? = null
     private var engine: EmbeddedServer<*, *>? = null
+    private val shutdownScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     var actualPort: Int = 0
         private set
@@ -83,6 +90,7 @@ class LobbyServer(
     suspend fun stop() {
         engine?.stop(1000, 2000)
         engine = null
+        shutdownScope.cancel()
         logger.info("LobbyServer stopped")
     }
 
@@ -135,7 +143,8 @@ class LobbyServer(
                     session = this,
                 )
                 val error = mutex.withLock {
-                    if (slots.values.any { it.nick.equals(msg.nick, ignoreCase = true) }) "nick taken"
+                    if (phase != Phase.Lobby) "game in progress"
+                    else if (slots.values.any { it.nick.equals(msg.nick, ignoreCase = true) }) "nick taken"
                     else {
                         slots[slot.playerId] = slot
                         if (hostId == null) hostId = slot.playerId
@@ -327,10 +336,21 @@ class LobbyServer(
                 false
             }
         }
-        if (wasConnected) {
-            broadcastSessionEvent(slot, PlayerSessionEvent.DISCONNECTED)
-            broadcastState()
+        if (!wasConnected) return
+        if (slot.playerId == hostId) {
+            // смерть хоста фатальна: всем HostDisconnected и shutdown
+            logger.info("host {} disconnected, shutting down", slot.nick)
+            val sessions = mutex.withLock { slots.values.filter { it.connected }.mapNotNull { it.session } }
+            val text = ServerMsg.HostDisconnected.encodeToJson()
+            sessions.forEach { sendFrame(it, text) }
+            shutdownScope.launch {
+                delay(300)
+                stop()
+            }
+            return
         }
+        broadcastSessionEvent(slot, PlayerSessionEvent.DISCONNECTED)
+        broadcastState()
     }
 
     private suspend fun DefaultWebSocketServerSession.sendErrorAndClose(reason: String) {

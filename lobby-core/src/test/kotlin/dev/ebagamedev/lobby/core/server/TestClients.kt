@@ -72,9 +72,27 @@ class RawWsClient(private val port: Int) {
             error("unreachable")
         }
 
+    suspend fun nextOrNull(timeoutMs: Long): ServerMsg? {
+        var remaining = timeoutMs
+        val start = System.currentTimeMillis()
+        while (remaining > 0) {
+            val msg = kotlinx.coroutines.withTimeoutOrNull(remaining) { queue.receive() } ?: return null
+            if (msg != null) return msg
+            remaining = timeoutMs - (System.currentTimeMillis() - start)
+        }
+        return null
+    }
+
     fun close() {
         runCatching { kotlinx.coroutines.runBlocking { session.close() } }
         http.close()
+        scope.cancel()
+    }
+
+    /** Аварийный обрыв без close-frame (имитация падения сети). */
+    fun abort() {
+        runCatching { session.cancel() }
+        runCatching { http.close() }
         scope.cancel()
     }
 }
