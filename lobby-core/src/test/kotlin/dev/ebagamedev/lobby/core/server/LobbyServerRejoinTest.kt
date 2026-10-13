@@ -66,8 +66,13 @@ class LobbyServerRejoinTest {
     }
 
     private suspend fun startGame(host: RawWsClient, vararg others: RawWsClient) {
+        // каждый SetReady ждём по broadcast — иначе StartGame может обойти SetReady на сервере
         host.send(ClientMsg.SetReady(true))
-        others.forEach { it.send(ClientMsg.SetReady(true)) }
+        host.awaitState { s -> s.players.first { it.playerId == s.hostId }.ready }
+        for ((i, c) in others.withIndex()) {
+            c.send(ClientMsg.SetReady(true))
+            host.awaitState { s -> s.players.count { it.ready } == i + 2 } // host + уже готовые
+        }
         host.send(ClientMsg.StartGame)
         host.await<ServerMsg.GameStarted>()
         others.forEach { it.await<ServerMsg.GameStarted>() }
@@ -270,6 +275,19 @@ class LobbyServerRejoinTest {
         val (hostP, _) = lobbyOfTwo(port)
         hostP.first.send(ClientMsg.GameMsg(JsonPrimitive("too-early")))
         assertEquals("not in game", hostP.first.await<ServerMsg.Error>().reason)
+        Unit
+    }
+
+    @Test
+    fun `lobby commands in game rejected`() = runBlocking {
+        val port = newServer()
+        val (hostP, aP) = lobbyOfTwo(port)
+        startGame(hostP.first, aP.first)
+
+        aP.first.send(ClientMsg.SetReady(false))
+        assertEquals("not in lobby", aP.first.await<ServerMsg.Error>().reason)
+        aP.first.send(ClientMsg.SetColor(0xFF0000FF))
+        assertEquals("not in lobby", aP.first.await<ServerMsg.Error>().reason)
         Unit
     }
 }

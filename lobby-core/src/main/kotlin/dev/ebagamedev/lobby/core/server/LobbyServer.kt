@@ -201,7 +201,8 @@ class LobbyServer(
         when (msg) {
             is ClientMsg.SetColor -> {
                 val error = mutex.withLock {
-                    if (slots.values.any { it.playerId != slot.playerId && it.color == msg.color }) "color taken"
+                    if (phase != Phase.Lobby) "not in lobby"
+                    else if (slots.values.any { it.playerId != slot.playerId && it.color == msg.color }) "color taken"
                     else {
                         slot.color = msg.color
                         null
@@ -210,8 +211,14 @@ class LobbyServer(
                 if (error != null) sendTo(slot, ServerMsg.Error(error)) else broadcastState()
             }
             is ClientMsg.SetReady -> {
-                mutex.withLock { slot.ready = msg.ready }
-                broadcastState()
+                val error = mutex.withLock {
+                    if (phase != Phase.Lobby) "not in lobby"
+                    else {
+                        slot.ready = msg.ready
+                        null
+                    }
+                }
+                if (error != null) sendTo(slot, ServerMsg.Error(error)) else broadcastState()
             }
             is ClientMsg.Kick -> handleKick(slot, msg)
             is ClientMsg.SelectScenario -> {

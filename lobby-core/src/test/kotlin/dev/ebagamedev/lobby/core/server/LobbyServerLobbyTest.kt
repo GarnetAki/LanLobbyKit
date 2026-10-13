@@ -137,7 +137,8 @@ class LobbyServerLobbyTest {
             val s = LobbyServer(scenarios, requestedPort = p)
             server = s
             val actual = s.start()
-            assertEquals(p + 1, actual)
+            // P занят блокером → сервер встал на P+1..P+9 (P+1 тоже может быть занят на машине)
+            assertTrue(actual in (p + 1)..(p + 9), "actual=$actual, blocked=$p")
             assertEquals(actual, s.actualPort)
             val (c, _) = join(actual, "prof-1", "Host")
             val state = c.awaitState { true }
