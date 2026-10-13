@@ -18,14 +18,13 @@ import dev.ebagamedev.lobby.core.client.LobbyEvent
 import dev.ebagamedev.lobby.core.protocol.PlayerSessionEvent
 import dev.ebagamedev.lobby.ui.screens.LobbyScreen
 import dev.ebagamedev.lobby.ui.screens.MenuScreen
-import dev.ebagamedev.lobby.ui.screens.ProfileScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 
 object LanLobby {
 
-    private enum class Screen { Profile, Menu, Lobby }
+    private enum class Screen { Menu, Lobby }
 
     /** Показывает Compose-лобби; после GameStarted окно закрывается и вызывается game.onGameStarted. */
     fun run(game: LobbyGameUi) {
@@ -33,7 +32,7 @@ object LanLobby {
         var startedWith: Pair<LobbyClient, JsonElement?>? = null
 
         application {
-            var screen by remember { mutableStateOf(Screen.Profile) }
+            var screen by remember { mutableStateOf(Screen.Menu) }
             val snackbar = remember { SnackbarHostState() }
             val uiScope = androidx.compose.runtime.rememberCoroutineScope()
             val client = controller.client
@@ -72,7 +71,6 @@ object LanLobby {
                     ) { padding ->
                         val modifier = Modifier.fillMaxSize().padding(padding)
                         when (screen) {
-                            Screen.Profile -> Box_(modifier) { ProfileScreen(controller) { screen = Screen.Menu } }
                             Screen.Menu -> Box_(modifier) {
                                 MenuScreen(
                                     controller,
